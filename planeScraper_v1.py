@@ -70,7 +70,14 @@ class planeScraper:
         flightInfo = {}
         flightInfo['FlightWay'] = flightWay
 
-        flightInfo['Price'] = round (flightDataDict['legs'][flightID]['price']['exactPrice'], 2)
+        if flightWay == 'Return':
+
+            flightInfo['Price'] = round (flightDataDict['legs'][flightID]['price']['bestPriceDelta'], 2)
+
+        elif flightWay == 'Outbound':
+
+            flightInfo['Price'] = round (flightDataDict['legs'][flightID]['price']['exactPrice'], 2)
+
         flightInfo['Airline'] = flightDataDict['legs'][flightID]['carrierSummary']['airlineName']
         flightInfo['Stops'] = flightDataDict['legs'][flightID]['stops']
 
@@ -121,6 +128,7 @@ class planeScraper:
             flightInfo[attributeToAdd] = flightInfo_Out[attributeToAdd] + flightInfo_Return[attributeToAdd]
 
         return flightInfo
+
     def _writeToCache(self, flightsDict):
         '''
         '''
@@ -130,7 +138,6 @@ class planeScraper:
 
         with open('Cache/' + cacheFileName + '.json', 'w') as outCacheFile:
             json.dump(flightsDict, outCacheFile)
-
 
     def _getFlightInfoSingle(self, writeToCache = False):
         '''
@@ -166,7 +173,6 @@ class planeScraper:
 
         return flightsDict
 
-
     def _getFlightInfoReturn(self, writeToCache = False):
         '''
             To be called if we have a return flight
@@ -195,7 +201,13 @@ class planeScraper:
         # Will have to loop over outbounds here via list(flightDataDictOutBound['legs'].keys())[0]; REplace [0] with flightNb
 
         for  flightNb_Outbound, flightID_Outbound in enumerate(flightDataDictOutBound['legs'].keys()):
+
+            # if flightID_Outbound != '42feffd1743e8ea1afecec3a04d7b294':
+            #     continue
+            # else:
+
             print(flightID_Outbound, flightNb_Outbound)
+
 
             flightInfo_Out = self._makeFlightInfoDict(flightDataDictOutBound, flightID_Outbound, 'Outbound')
 
@@ -218,24 +230,45 @@ class planeScraper:
                 # print(flightID_Return, flightNb_Return)
                 # pp(flightDataDictReturn['legs'][flightID_Return]['price'])
 
+                if flightID_Outbound == flightID_Return :
+                    print(flightID_Outbound, flightID_Return)
+                    continue
+
+                # if flightID_Return == 'd96ed0d1259afc7d0bbfd46a23b71f02' or flightID_Return == '5db475cc4090939bcfd18ba5f8097b3a':
+                #     # continue
+                #     # print ('____')
+                #
+                #     # pp(flightDataDictReturn['legs'][flightID_Return]['price'])
+                #     print(delimitator)
+                # else:
+                #     continue
+
+                # exit()
+                # pp (list(flightDataDictReturn['index'] ))
+
                 flightInfo_Return = self._makeFlightInfoDict(flightDataDictReturn, flightID_Return, 'Return')
                 # print(flightInfo_Return['Price'], ' for the Return Trip, with an outbound: ', flightInfo_Out['Price'])
                 # pp (flightInfo_Out)
                 # pp (flightInfo_Return)
 
+
                 flightInfo = self._makeReturnFlightFromDicts(flightInfo_Out, flightInfo_Return)
-                
+
                 # pp (flightInfo)
                 # if flightNb_Return == 2:
                 #     exit()
                 flightsDict['Flights']['Flight-O'+str(flightNb_Outbound+1) + '-R' + str(flightNb_Return+1) ] = flightInfo
-                del(flightInfo)
 
+                # pp (flightInfo)
+
+                del(flightInfo)
                 # exit()
 
             print(delimitator)
 
             # if flightNb_Outbound == 3:
+
+        self._writeToCache(flightsDict)
 
         return flightsDict
             # exit()
@@ -514,14 +547,11 @@ class planeScraper:
 
         return chi2Dict
 
-    def plotFlights(self, flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, colorMap = 'copper', constrList = ['Price', 'TotalFlightTime']):
+    def plotFlights(self, flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, axisLabels, colorMap = 'RdBu_r', constrList = ['Price', 'TotalFlightTime'],  ):
         '''
         '''
         plt.rc('font', size = 40)
         plt.rc('text', usetex=True)
-
-        # fig = plt.figure()
-        # cmap = plt.get_cmap('jet', 2)
         fig,ax = plt.subplots(figsize=(20, 7))
 
         axisDict = self._makeAxisFromDict(flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle)
@@ -542,14 +572,20 @@ class planeScraper:
 
             pos = sc.get_offsets()[ind["ind"][0]]
             annot.xy = pos
-            text = "{0}\n {1} hrs \n {2} {3}".format(" ".join( [names[n] for n in ind["ind"]] ),
-                                                  " ".join( [str(axisDict['xAxis'][n]) for n in ind["ind"]]) ,
+            text = "{0}\n {1} {2} \n {3} {4} \n {5} {6}".format(
+                                                  " ".join( ['Flight ' + str(n) for n in ind["ind"]] ),
+                                                  " ".join( [str(axisDict['xAxis'][n]) for n in ind["ind"]] ) ,
+                                                      axisLabels[0] ,
                                                   " ".join( [str(axisDict['yAxis'][n]) for n in ind["ind"]]) ,
-                                                  flightsDict['FlightAttributes']['Currency']
+                                                      axisLabels[1],
+                                                  " ".join( [str(axisDict['colorAxis'][n]) for n in ind["ind"]]) ,
+                                                      axisLabels[2]
                                                   )
+                                                  # " ".join( [names[n] for n in ind["ind"]] ),
             annot.set_text(text)
             # annot.get_bbox_patch().set_facecolor(cmap(norm(c[ind["ind"][0]])))
             annot.get_bbox_patch().set_alpha(1)
+
         def hover(event):
             vis = annot.get_visible()
             if event.inaxes == ax:
@@ -565,7 +601,7 @@ class planeScraper:
         fig.canvas.mpl_connect("motion_notify_event", hover)
 
         import numpy as np
-        color_bar = fig.colorbar(sc)#, ticks=np.linspace(1,2,2))
+        color_bar = fig.colorbar(sc, label = axisLabels[2])#, ticks=np.linspace(1,2,2))
 
         import statistics
         chi2_DictOfLists = self._makeAxis_Multiple(flightsDict, constrList)
@@ -578,19 +614,30 @@ class planeScraper:
             constrDict[constr]['Ideal'] = min( chi2_DictOfLists[constr] )
 
         # NEED TO MAKE THIS PROPER
-        constrDict['Price']['Weight'] = 0.5
-        constrDict['TotalFlightTime']['Weight'] = 1 - 0.5
+        constrDict['Price']['Weight'] = 0.9
+        constrDict['TotalFlightTime']['Weight'] = 1 - 0.9
 
         chiDict = self._getChiSquared(flightsDict, constrDict )
         sortedChiList = [ (chiDict[χ2], χ2) for χ2 in sorted(chiDict, key = chiDict.get)]
 
         markerlist = ['*',  '^', 's', 'p', 'h']
+
+        print ('Working with a Price Weight of {1}, and a TotalFlightTime Weight of '.format(constrDict['Price']['Weight'], constrDict['TotalFlightTime']['Weight'] ) )
+        print (delimitator)
+
         for i in range(5):
-            print (flightsDict['Flights'][ sortedChiList[i][1] ]['FlightCode'] ,
+            print ( flightsDict['Flights'][ sortedChiList[i][1] ]['FlightCode'] ,
                     flightsDict['Flights'][ sortedChiList[i][1] ]['Price'] ,
-                    flightsDict['Flights'][ sortedChiList[i][1] ]['TotalFlightTime'],
+                    flightsDict['Flights'][ sortedChiList[i][1] ]['FlightTimeOut'],
+                    flightsDict['Flights'][ sortedChiList[i][1] ]['FlightTimeReturn'],
+
                     sortedChiList[i])
-            # plt.scatter(flightsDict['Flights'][ sortedChiList[i][1] ]['TotalFlightTime'], flightsDict['Flights'][ sortedChiList[i][1] ]['Price'] , marker=markerlist[i], s=100)
+
+            plt.scatter( flightsDict['Flights'][ sortedChiList[i][1] ][xAxisHandle],
+                         flightsDict['Flights'][ sortedChiList[i][1] ][yAxisHandle] , marker=markerlist[i], s=100, c='black')
+
+        plt.xlabel(axisLabels[0])
+        plt.ylabel(axisLabels[1])
 
 
         plt.show()
@@ -601,16 +648,20 @@ if __name__ == '__main__':
 
     wkPS = planeScraper('GLA', 'BUH', '04/11/2018','11/11/2018')
 
-    flightsDict   = wkPS._getFlightInfoReturn()
+    # flightsDict   = wkPS._getFlightInfoReturn()
     # pp(flightsDict)
     # print (wkPS.departDate.day, wkPS.departDate.month, wkPS.departDate.year )
     # print (type (wkPS.departDate.day))
-    # with open('Cache/CacheFile_GLA->BUH_03092018-103307.json', 'r') as inFile:
-    #     flightsDict  = json.load (inFile)
+    with open('Cache/CacheFile_GLA->BUH_10092018-101824.json', 'r') as inFile:
+        flightsDict  = json.load (inFile)
 
     xAxisHandle = 'FlightTimeOut'
+    xAxisLabel = 'hrs'
     yAxisHandle = 'FlightTimeReturn'
+    yAxisLabel = 'hrs'
+
     colorAxisHandle = 'Price'
+    colorAxisLabel = 'USD'
     σ_Price = 1
     σ_FlightTime = 2
 
@@ -618,4 +669,4 @@ if __name__ == '__main__':
 
 
 
-    wkPS.plotFlights( flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle)
+    wkPS.plotFlights( flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, [xAxisLabel, yAxisLabel, colorAxisLabel] )
