@@ -26,13 +26,29 @@ FNULL = open(os.devnull, 'w')
 
 class planeScraper:
     '''
-        ADD DOCUMENTATION
+        Wee little class to get the cheapest and most time efficient flights from Expedia. Analyses if you want to go on a holiday, just want the cheapest journey onw way or something of the sorts.
 
     '''
     # REQUEST_ID_REGEX = r"data-leg-natural-key=\"(\w+)\">"
 
     def __init__(self, departAirp, arrivAirp, departDate, returnDate = None):
         '''
+            NEEDS CROSSCHECK with list of location/iata codes. !!!!!
+
+            Initialises the class instance for the journey with the following attributes:
+
+            Args:
+                - departAirp            ::          Type: <str> . IATA code that specifies the Departure airport (E.g. if we're leaving from Glasgow the IATA code is GLA).
+
+                - arrivAirp             ::          Type: <str> . IATA code that specifies the Return airport (E.g. if we're returning from Bucharest the IATA code is BUH).
+
+                - departDate            ::          Type: <str> or <datetime> . Departure date that is either specified in the usual international format DD/MM/YYYY as a string and is then formatted (e.g. 10/12/2018 as December 10th 2018) or as a datetime object.
+
+            Optional Args:
+                - returnDate            ::          Type: <str> or <datetime>. Same as "departDate". If NOT specified the class then the rest of the class will treat it as a the one way flight form departAirp to arrivAirp on the departDate. IF SPECIFIED then we store the return information which is then available for further purpouses.
+
+            Returns:
+                - None
         '''
 
         # Maybe introduce some cleaning / formatting tool here?
@@ -66,6 +82,13 @@ class planeScraper:
 
     def _makeFlightsDictHead(self, flightDataDict):
         '''
+            Makes a flight dictionary head for a class instance that contains 'FlightAttributes' and  an empty dictionary 'Flights'.
+            'FlightAttributes' : { 'Airports' : {'Departure' : ... , 'Arrival' : ... },
+                                   'Currency' : ... ,
+                                   'TimeUnit' : ... }
+
+            Arguments:
+                - flightDataDict            ::          Type: <dict> . 'Processed' Fligh Data dictionary resulting form the expedia HTML request (i.e. not raw json).
         '''
         flightsDict = {}
         flightsDict['FlightAttributes'] = { }
@@ -135,8 +158,10 @@ class planeScraper:
         flightInfo['PriceReturn'] = flightInfo_Return['Price']
 
         for attributeToAdd in ['FlightCode', 'TotalFlightTime', 'Price']:
-            flightInfo[attributeToAdd] = flightInfo_Out[attributeToAdd] + flightInfo_Return[attributeToAdd]
-
+            if attributeToAdd == 'FlightCode':
+                flightInfo[attributeToAdd] = flightInfo_Out[attributeToAdd] + '::' + flightInfo_Return[attributeToAdd]
+            else:
+                flightInfo[attributeToAdd] = flightInfo_Out[attributeToAdd] + flightInfo_Return[attributeToAdd]
         return flightInfo
 
     def _writeToCache(self, flightsDict):
@@ -201,79 +226,121 @@ class planeScraper:
         spinner = Halo(text='Getting Return Flight Info. Might take a while', spinner='dots')
         spinner.start()
 
+        # headers = {}
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'}
+
+
         expediaURL = "https://www.expedia.com/Flights-Search?flight-type=on&starDate={0}%2F{1}%2F{2}&endDate={3}%2F{4}%2F{5}&mode=search&trip=roundtrip&leg1=from%3A{6}%2Cto%3A{7}%2Cdeparture%3A{0}%2F{1}%2F{2}TANYT&leg2=from%3A{7}%2Cto%3A{6}%2Cdeparture%3A{3}%2F{4}%2F{5}TANYT&passengers=adults%3A1%2Cchildren%3A0%2Cseniors%3A0%2Cinfantinlap%3AY&options=cabinclass%3Aeconomy&mode=search&origref=www.expedia.com".format(
             str(self.departDate.month), str(self.departDate.day), str(self.departDate.year),
             str(self.returnDate.month), str(self.returnDate.day), str(self.returnDate.year),
             self.departAirp, self.arrivAirp )
-
+        #
         # print(expediaURL)
         # print(delimitator3)
-
-        expediaResp = requests.get(expediaURL)
-        parser = html.fromstring(expediaResp.text)
-        json_data_xpath = parser.xpath("//script[@id='cachedResultsJson']//text()")
-        raw_json = json.loads(json_data_xpath[0] if json_data_xpath else '')
+        # import time
+        # time.sleep(3)
 
 
-        flightDataDictOutBound = json.loads(raw_json["content"])
-        #  Maybe find another way around this without using Eleme⁠nt?
-
-        from pattern.web import Element
-        el1 = Element(expediaResp.content)
-        departure_request_id = el1("div#originalContinuationId")[0].content
+        with requests.Session() as s:
 
 
+            # Super ad hoc open a browser and fake the visit so i can get that sweet sweet data
+            from selenium import webdriver
 
-        flightsDict = self._makeFlightsDictHead( flightDataDictOutBound )
-
-        for  flightNb_Outbound, flightID_Outbound in enumerate(flightDataDictOutBound['legs'].keys()):
-
-            # print(flightID_Outbound, flightNb_Outbound)
-
-            flightInfo_Out = self._makeFlightInfoDict(flightDataDictOutBound, flightID_Outbound, 'Outbound')
-
-            json_url = "https://www.expedia.com/Flight-Search-Paging?c={DEPT_ID}&is=1" \
-            "&fl0={ARRV_ID}&sp=asc&cz=200&cn=0&ul=1"
-            json_url = json_url.format(
-                DEPT_ID=departure_request_id,
-                ARRV_ID=list(flightDataDictOutBound['legs'].keys())[flightNb_Outbound]
-            )
-            # print(json_url)
-            # import time
-            # time.sleep(1)
-
-            get_request = requests.get(json_url)
-            parser = html.fromstring(get_request.text)
-            flightDataDictReturn = get_request.json()['content']
-
-            # IF we get a non empty return response then we proceed
-
-            if flightDataDictReturn['legs']:
-                print ('\n'+Fore.GREEN + 'νν SUCCESS!!' + Style.RESET_ALL)
-
-                for  flightNb_Return, flightID_Return in enumerate(flightDataDictReturn['legs'].keys()):
-
-                    # This is the continuation statement when the Outbound and Return have the same id since this combination is just a relic and not possible
-                    if flightID_Outbound == flightID_Return :
-                        # print(flightID_Outbound, flightID_Return)
-                        continue
-
-                    flightInfo_Return = self._makeFlightInfoDict(flightDataDictReturn, flightID_Return, 'Return')
-                    flightInfo = self._makeReturnFlightFromDicts(flightInfo_Out, flightInfo_Return)
-
-                    flightsDict['Flights']['Flight-O'+str(flightNb_Outbound+1) + '-R' + str(flightNb_Return+1) ] = flightInfo
-                    # pp (flightInfo)
-                    del(flightInfo)
-            else:
-                print ('\n'+Fore.RED + '×× FAILED !!' + Style.RESET_ALL)
+            driver = webdriver.Safari()
+            driver.get(expediaURL)
+            import time
+            time.sleep(10)
 
 
-                # print(delimitator)
+            #########################################################################
 
-        self._writeToCache(flightsDict)
-        stopSymbol = Fore.GREEN+'✓' + Style.RESET_ALL
+            expediaResp = s.get(expediaURL, headers = headers, verify=True)
 
-        spinner.stop_and_persist(symbol=stopSymbol, text='Got Flight Info.')
+            parser = html.fromstring(expediaResp.text)
+            json_data_xpath = parser.xpath("//script[@id='cachedResultsJson']//text()")
+            raw_json = json.loads(json_data_xpath[0] if json_data_xpath else '')
+
+            print ('\nExpedia :',expediaResp.status_code)
+
+
+            flightDataDictOutBound = json.loads(raw_json["content"])
+            #  Maybe find another way around this without using Eleme⁠nt?
+
+            from pattern.web import Element
+            el1 = Element(expediaResp.content)
+            departure_request_id = el1("div#originalContinuationId")[0].content
+
+
+
+            flightsDict = self._makeFlightsDictHead( flightDataDictOutBound )
+            failedJSONList = [];
+
+            count = 0
+            for  flightNb_Outbound, flightID_Outbound in enumerate(flightDataDictOutBound['legs'].keys()):
+                if count ==3 :
+                    break
+                # print(flightID_Outbound, flightNb_Outbound)
+                count +=1
+                flightInfo_Out = self._makeFlightInfoDict(flightDataDictOutBound, flightID_Outbound, 'Outbound')
+
+                json_url = "https://www.expedia.com/Flight-Search-Paging?c={DEPT_ID}&is=1" \
+                "&fl0={ARRV_ID}&sp=asc&cz=200&cn=0&ul=1"
+                json_url = json_url.format(
+                    DEPT_ID=departure_request_id,
+                    ARRV_ID=list(flightDataDictOutBound['legs'].keys())[flightNb_Outbound]
+                )
+
+                # print(json_url)
+                # time.sleep(2)
+
+                get_request = s.get(json_url, headers = headers)
+                print ('\nJson:', get_request.status_code)
+
+                try:
+                    get_request.raise_for_status()
+                except:
+                    print(f"Status code: {get_request.status_codes}")
+
+
+                parser = html.fromstring(get_request.text)
+                flightDataDictReturn = get_request.json()['content']
+
+                # IF we get a non empty return response then we proceed
+
+                if flightDataDictReturn['legs']:
+                    print ('\n'+Fore.GREEN + 'νν SUCCESS!!' + Style.RESET_ALL)
+
+                    for  flightNb_Return, flightID_Return in enumerate(flightDataDictReturn['legs'].keys()):
+
+                        # This is the continuation statement when the Outbound and Return have the same id since this combination is just a relic and not possible
+                        if flightID_Outbound == flightID_Return :
+                            # print(flightID_Outbound, flightID_Return)
+                            continue
+
+                        flightInfo_Return = self._makeFlightInfoDict(flightDataDictReturn, flightID_Return, 'Return')
+                        flightInfo = self._makeReturnFlightFromDicts(flightInfo_Out, flightInfo_Return)
+
+                        flightsDict['Flights']['Flight-O'+str(flightNb_Outbound+1) + '-R' + str(flightNb_Return+1) ] = flightInfo
+                        # pp (flightInfo)
+                        del(flightInfo)
+                else:
+                    print ('\n'+Fore.RED + '×× FAILED !!' + Style.RESET_ALL)
+                    failedJSONList.append({"JsonURL" :json_url, "FlightInfo":[flightNb_Outbound, flightID_Outbound]})
+
+
+                    # print(delimitator)
+
+            self._writeToCache(flightsDict)
+            stopSymbol = Fore.GREEN+'✓' + Style.RESET_ALL
+
+            spinner.stop_and_persist(symbol=stopSymbol, text='Got Flight Info.')
+            del flightDataDictOutBound, flightDataDictReturn
+
+
+
+
+            driver.close()
         # print (delimitator)
         return flightsDict
 
@@ -607,12 +674,34 @@ class planeScraper:
         # print(countDuplicates)
             # pp (flightsDict['Flights'][flightNb]['FlightCode'])
 
-    def plotFlights(self, flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, axisLabels, colorMap = 'RdBu_r', constrList = ['Price', 'TotalFlightTime'],  priceWeight = 0.35, nbOfShows = 5):
+    def _applyHardCuts(self, flightsDict, cutsDict):
+        '''
+            ADD DOCUMENTATION!!
+        '''
+        flightList = list (flightsDict['Flights'].keys())
+
+        for flightNb in flightList:
+
+            for cut in cutsDict.keys():
+
+                # print (flightNb)
+                # print (flightsDict['Flights'][flightNb])
+                # print (cutsDict[cut], delimitator3)
+
+                if flightsDict['Flights'][flightNb][cut] > cutsDict[cut]:
+                    del flightsDict['Flights'][flightNb]
+                    break
+
+        return flightsDict
+
+    def plotFlights(self, flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, axisLabels, cutsDict, colorMap = 'RdBu_r', constrList = ['Price', 'TotalFlightTime'],  priceWeight = 0.5, nbOfShows = 10):
         '''
         '''
         plt.rc('font', size = 40)
         plt.rc('text', usetex=True)
         fig,ax = plt.subplots(figsize=(20, 7))
+
+        flightsDict = self._applyHardCuts(flightsDict, cutsDict)
 
         # print('Initialy have ', len( list(flightsDict['Flights'].keys() ) ), ' flights.')
         # self._filterOutBuisness(flightsDict)
@@ -658,7 +747,7 @@ class planeScraper:
         sortedChiList = [ (chiDict[χ2], χ2) for χ2 in sorted(chiDict, key = chiDict.get)]
 
         markerlist = ['*', '^', 's', 'p', 'h']
-
+        print (delimitator)
         print (
                 'Working with a {colorG} Price Weight of {wp:4.2f} {colorReset}, and a {colorG} TotalFlightTime Weight of {wtf:4.2f} {colorReset}'.format(
                 wp = constrDict['Price']['Weight'],
@@ -679,15 +768,15 @@ class planeScraper:
                                     flightTimeOut = flightsDict['Flights'][ sortedChiList[i][1] ]['FlightTimeOut'],
                                     flightTimeReturn = flightsDict['Flights'][ sortedChiList[i][1] ]['FlightTimeReturn']
             )
-            print ( Fore.RED +' χ^2  Flight Nb ' + Style.RESET_ALL, i+1 )
+            print ( Fore.RED +' χ²  Flight Nb ' + Style.RESET_ALL, i+1 )
             print ( flightPrintStr ,'\n\nχ^2 stats: ',
                     sortedChiList[i]
                     )
             print ()
             print (delimitator2)
 
-            plt.scatter( flightsDict['Flights'][ sortedChiList[i][1] ][xAxisHandle],
-                         flightsDict['Flights'][ sortedChiList[i][1] ][yAxisHandle] , marker=markerlist[i], s=100, c='black')
+            # plt.scatter( flightsDict['Flights'][ sortedChiList[i][1] ][xAxisHandle],
+            #              flightsDict['Flights'][ sortedChiList[i][1] ][yAxisHandle] , marker=markerlist[i], s=100, c='black')
 
         # print (len(sortedChiList), len(axisDict['colorAxis']))
 
@@ -729,7 +818,7 @@ class planeScraper:
         plt.ylabel(axisLabels[1])
 
 
-        plt.show()
+        plt.show( )
 
         # return sortedChiList
 
@@ -739,6 +828,7 @@ def convertStrToDatetime(dateStr):
     departDate = date( dateVec[2], dateVec[1], dateVec[0])
 
     return departDate
+
 def formatDict(flightDict, keyStr):
     '''
     '''
@@ -803,7 +893,7 @@ def findMeAHoliday(departAirp, arrivAirp, holidayDuration, betweenDate_start, be
             # with open('Cache/CacheFile_GLA->BUH_10092018-101824.json', 'r') as inFile:
             #     flightsDict_partial  = json.load (inFile)
 
-            flightsDict_partial = formatDict(flightsDict_partial, 'Case'+str(stayTime) + str(departDate) + str(returnDate))
+            flightsDict_partial = formatDict(flightsDict_partial, 'C::'+str(stayTime) + "::"+ str(departDate) + str(returnDate))
             flightsDict['Flights'].update( flightsDict_partial['Flights'] )
 
             print ('Total nb of flights so far :', len ( list(flightsDict['Flights'].keys() ) ))
@@ -818,11 +908,11 @@ def findMeAHoliday(departAirp, arrivAirp, holidayDuration, betweenDate_start, be
         # print(delimitator2)
         count+=1
 
-        if count == 2:
-            break
+        # if count == 2:
+        #     break
         print (delimitator)
 
-    with open('HolidayRes-1.json', 'w') as outCacheFile:
+    with open('HolidayRes-DEN.json', 'w') as outCacheFile:
         json.dump(flightsDict, outCacheFile)
 
     return flightsDict
@@ -834,16 +924,23 @@ def findMeAHoliday(departAirp, arrivAirp, holidayDuration, betweenDate_start, be
 
 if __name__ == '__main__':
 
-    wkPS = planeScraper('GLA', 'BCN', '04/11/2018','11/11/2018')
-
+    wkPS = planeScraper('GLA', 'BCN', '05/11/2018','11/11/2018')
+    #
     # flightsDict   = wkPS._getFlightInfoReturn()
+    # exit()
+
+
     # flightsDict   = wkPS._getFlightInfoSingle()
+
     # pp(flightsDict)
 
     # print (wkPS.departDate.day, wkPS.departDate.month, wkPS.departDate.year )
     # print (type (wkPS.departDate.day))
-    with open('HolidayRes-1.json', 'r') as inFile:
+
+    with open('HolidayRes-DEN.json', 'r') as inFile:
         flightsDict  = json.load (inFile)
+
+
     #
     # import copy
     # flightsDict2 = copy.deepcopy(flightsDict1)
@@ -917,8 +1014,13 @@ if __name__ == '__main__':
     # for flightCode in flightList:
     #     pp( flightsDict['Flights']['Flight-' + flightCode]  )
 
-    # holidayDuration = 7
-    # findMeAHoliday('GLA', 'BUH', holidayDuration,  '04/11/2018','11/11/2018')
+    holidayDuration = 10
+
+    cutsDict = { "Price": 800 ,
+                 "FlightTimeOut" : 20,
+                 "FlightTimeReturn" : 20
+                }
+    # flightsDict = findMeAHoliday('GLA', 'DEN', holidayDuration,  '06/02/2019','22/02/2019')
 
 
-    wkPS.plotFlights( flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, [xAxisLabel, yAxisLabel, colorAxisLabel] )
+    wkPS.plotFlights( flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, [xAxisLabel, yAxisLabel, colorAxisLabel] , cutsDict, priceWeight = 0.3)
