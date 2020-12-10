@@ -57,6 +57,7 @@ class planeScraper:
 
         # ADD CROSSCHECK WITH AIRPORT DATABASE, also introduce location/iata code mathcer
         # print (type(departDate)==str)
+
         if type(departDate)==str:
             dateVec = [int (dateBit) for dateBit in departDate.split('/')]
             self.departDate = date( dateVec[2], dateVec[1], dateVec[0])
@@ -526,7 +527,7 @@ class planeScraper:
                 flightInfo['Stops'] = flightDataDict['legs'][flightID]['stops']
 
                 auxTime = timedelta( hours = flightDataDict['legs'][flightID]['duration']['hours'],
-                               minutes = flightDataDict['legs'][flightID]['duration']['minutes'])
+                                minutes = flightDataDict['legs'][flightID]['duration']['minutes'])
 
                 flightInfo['FlightTime'] = round( auxTime.total_seconds()/3600, 2 )
 
@@ -846,7 +847,7 @@ def formatDict(flightDict, keyStr):
     return flightDict
 
 def findMeAHoliday(departAirp, arrivAirp, holidayDuration, betweenDate_start, betweenDate_end,
-                    pmHolidayDuration=1):
+                    pmHolidayDuration=2):
     '''
     '''
 
@@ -912,7 +913,8 @@ def findMeAHoliday(departAirp, arrivAirp, holidayDuration, betweenDate_start, be
         #     break
         print (delimitator)
 
-    with open('HolidayRes-DEN.json', 'w') as outCacheFile:
+    fileName = 'HolidayRes-' + departAirp + '-' + arrivAirp+ '.json'
+    with open(fileName, 'w') as outCacheFile:
         json.dump(flightsDict, outCacheFile)
 
     return flightsDict
@@ -924,7 +926,7 @@ def findMeAHoliday(departAirp, arrivAirp, holidayDuration, betweenDate_start, be
 
 if __name__ == '__main__':
 
-    wkPS = planeScraper('GLA', 'BCN', '05/11/2018','11/11/2018')
+    wkPS = planeScraper('GLA', 'BUH', '05/11/2018','11/11/2018')
     #
     # flightsDict   = wkPS._getFlightInfoReturn()
     # exit()
@@ -937,8 +939,8 @@ if __name__ == '__main__':
     # print (wkPS.departDate.day, wkPS.departDate.month, wkPS.departDate.year )
     # print (type (wkPS.departDate.day))
 
-    with open('HolidayRes-DEN.json', 'r') as inFile:
-        flightsDict  = json.load (inFile)
+    # with open('HolidayRes-DEN.json', 'r') as inFile:
+    #     flightsDict  = json.load (inFile)
 
 
     #
@@ -987,8 +989,8 @@ if __name__ == '__main__':
 
     # dictionary[new_key] = dictionary.pop(old_key)
 
-    # with open('Cache/CacheFile_GLA->BUH_10092018-101824.json', 'r') as inFile:
-    #     flightsDict2  = json.load (inFile)
+    with open('Cache/CacheFile_GLA->BUH_10092018-101824.json', 'r') as inFile:
+        flightsDict  = json.load (inFile)
 
     xAxisHandle = 'FlightTimeOut'
     xAxisLabel = r'Outbound Flight Time $(hrs)$'
@@ -1014,13 +1016,13 @@ if __name__ == '__main__':
     # for flightCode in flightList:
     #     pp( flightsDict['Flights']['Flight-' + flightCode]  )
 
-    holidayDuration = 10
+    holidayDuration = 16
 
     cutsDict = { "Price": 800 ,
                  "FlightTimeOut" : 20,
                  "FlightTimeReturn" : 20
                 }
-    # flightsDict = findMeAHoliday('GLA', 'DEN', holidayDuration,  '06/02/2019','22/02/2019')
+    flightsDict = findMeAHoliday('GLA', 'BUH', holidayDuration,  '18/12/2020','04/01/2021')
 
 
     wkPS.plotFlights( flightsDict, xAxisHandle, yAxisHandle, colorAxisHandle, [xAxisLabel, yAxisLabel, colorAxisLabel] , cutsDict, priceWeight = 0.3)
